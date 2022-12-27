@@ -69,11 +69,21 @@ class ABCDataset2(Dataset):
         for folder in folders:
             path = os.path.join(self.root, folder)
             objs = [os.path.join(path,x) for x in os.listdir(path) if ".obj" in x] #get list of all .obj files in the folder
+
+            #appears the 7z decompression schemes are different on linux and mac so we account for both scenarios. the .objs end up in folders on mac
+            more_folders = filter(os.path.isdir, map(lambda x : os.path.join(path,x),os.listdir(path)))
+            more_folders = map(os.path.basename, more_folders)
+            more_folders = list(more_folders)
+            for another_folder in more_folders:
+                path = os.path.join(self.root, folder, another_folder)
+                objs += [os.path.join(path,x) for x in os.listdir(path) if ".obj" in x and not "._" in x]
+
             num_objs_per_datablock=2 #like 17k items in dir. so this will make ~17 processed items
+
             for i in range(0,len(objs),num_objs_per_datablock):
                 meshes = []
                 for obj in objs[i:i+num_objs_per_datablock]:
-                    meshes.append(read_obj(obj))
+                    meshes.append(read_obj(obj)) #here it blows up
 
                 data_list = []
                 for mesh in meshes:
@@ -109,5 +119,5 @@ class ABCDataset2(Dataset):
 
             
 if __name__ == "__main__":
-    ABCDataset2("data/ABC-Dataset") #do processing automatically if we call this class. takes a long time but gets saved to hdd
+    ABCDataset2("data/ABC-Dataset/") #do processing automatically if we call this class. takes a long time but gets saved to hdd
 
