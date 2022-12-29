@@ -1,10 +1,14 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import HypergraphConv, fps, TopKPooling
 import torch_geometric.transforms as T
 import os
 from pytorch3d.io import load_obj, save_obj, load_objs_as_meshes
+from diffusers import DDPMPipeline, DDPMScheduler
+from diffusers.optimization import get_scheduler
+import time
 
 class DownSampleBlock(nn.Module):
     def __init__(
@@ -41,11 +45,12 @@ class UndoNoise(nn.Module):
         self.encode = ConvBlock(3,16)
         self.decode = ConvBlock(16,3)
 
-    def forward(self, x, hyperedge_index):
+    def forward(self, x, hyperedge_index, timesteps):
         x = self.encode(x, hyperedge_index)
         x = self.decode(x, hyperedge_index)
         return x
 
+#Mesh -> Data (mesh -> hypergraph)
 def makeHyperIncidenceMatrix(mesh):
     faces = mesh.face.t()
     for i,face in enumerate(faces):
@@ -57,20 +62,85 @@ def makeHyperIncidenceMatrix(mesh):
             out = torch.cat((out,hyperedge),dim=-1)
     return out
 
+def makeFaceTensor(incidenceMat):
+    #as is the edges never even change so this isn't necessary but if the model gets more complex to account for clipping edges then perhaps it'll modify edges and then we'll need this
+    return None
+
 def applyNoise(x,distribution):
-    return torch.randn(x.shape) * (distribution ** 0.5)
+    return x + (torch.randn(x.shape) * (distribution ** 0.5))
 
 from ABCDataset import ABCDataset2
-mesh = ABCDataset2("data/ABC-Dataset")[0][0]
-mesh.edge_index = makeHyperIncidenceMatrix(mesh)
-noisy_mesh = mesh
-noisy_mesh.pos = applyNoise(mesh.pos,1000)
+train_dataloader = ABCDataset2("/Volumes/PortableSSD/data/ABC-Dataset")
 
-net = UndoNoise()
-y = net(noisy_mesh.pos, noisy_mesh.edge_index)
-new_mesh = noisy_mesh
-new_mesh.pos = y
-print(y.shape)
+args = {
+    "learning_rate": 1e-4,
+    "adam_beta1": 0.95,
+    "adam_beta2": 0.999,
+    "adam_weight_decay": 1e-6,
+    "adam_epsilon": 1e-08,
+    "lr_scheduler": "cosine",
+    "lr_warmup_steps": 500,
+    "num_epochs": 100,
+    "gradient_accumulation_steps": 1,
+    "ddpm_num_steps": 1000,
+    "ddpm_beta_schedule": "linear",
+    "prediction_type": "epsilon",
+    "save_epochs": 2,
+}
+
+model = UndoNoise()
+
+noise_scheduler = DDPMScheduler(
+    num_train_timesteps=args["ddpm_num_steps"],
+    beta_schedule=args["ddpm_beta_schedule"],
+    prediction_type=args["prediction_type"],
+)
+
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+    lr=args["learning_rate"],
+    betas=(args["adam_beta1"], args["adam_beta2"]),
+    weight_decay=args["adam_weight_decay"],
+    eps=args["adam_epsilon"],
+)
+
+lr_scheduler = get_scheduler(
+    args["lr_scheduler"],
+    optimizer=optimizer,
+    num_warmup_steps=args["lr_warmup_steps"],
+    num_training_steps=(len(train_dataloader) * args["num_epochs"]) // args["gradient_accumulation_steps"],
+)
+
+for epoch in range(args["num_epochs"]):
+    model.train()
+    for step,batch in enumerate(train_dataloader):
+        clean_verts = batch.pos
+        noise = torch.randn(clean_verts.shape).to(clean_verts.device)
+        bsz = clean_verts.shape[0]
+        #timesteps = torch.randint(
+        #    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=clean_verts.device
+        #).long()
+
+        timesteps = torch.randint(0,1,(bsz,),device=clean_verts.device) #just for testing
+
+        noisy_verts = noise_scheduler.add_noise(clean_verts, noise, timesteps)
+
+        batch.edge_index = makeHyperIncidenceMatrix(batch)
+        model_output = model(noisy_verts, batch.edge_index, timesteps)
+
+        #assume epsilon prediction
+        loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
+
+        print(loss)
+
+        loss.backward()
+        optimizer.step()
+        lr_scheduler.step()
+        optimizer.zero_grad()
+
+    if epoch % args["save_epochs"] == 0 or epoch == args["num_epochs"] - 1:
+        torch.save(model, f"models/{time.time()}_epoch{epoch}.pt")
+                
 
 
 
@@ -78,5 +148,23 @@ print(y.shape)
 
 #hyperedges are preprented by the edge_idx and another array of the same size saying what index each edge is
 
-#final_obj = os.path.join('./', 'final_model.obj')
-#save_obj(final_obj, x, final_faces)
+
+#----
+exit()
+from ABCDataset import ABCDataset2
+data = ABCDataset2("/Volumes/PortableSSD/data/ABC-Dataset")
+mesh = data[0][1]
+
+save_obj("original.obj", mesh.pos, mesh.face.t())
+
+mesh.edge_index = makeHyperIncidenceMatrix(mesh)
+mesh.pos = applyNoise(mesh.pos,1) #faces will clip quickly here. not good.
+save_obj("noisy.obj", mesh.pos, mesh.face.t())
+
+net = UndoNoise()
+y = net(mesh.pos, mesh.edge_index)
+mesh.pos = y
+
+save_obj("model_output.obj", mesh.pos, mesh.face.t())
+
+
