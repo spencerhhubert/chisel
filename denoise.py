@@ -8,8 +8,10 @@ import os
 from pytorch3d.io import load_obj, save_obj, load_objs_as_meshes
 from diffusers import DDPMPipeline, DDPMScheduler
 from diffusers.optimization import get_scheduler
+from diffusers.models.embeddings import GaussianFourierProjection, TimestepEmbedding, Timesteps
 import time
 
+#todo make down and up work lol
 class DownSampleBlock(nn.Module):
     def __init__(
         self,
@@ -22,32 +24,64 @@ class DownSampleBlock(nn.Module):
 #        x, edge_index, _, _ = fps(data.x, data.edge_index)
         return self.downsampler(data.x, data.edge_index)
 
+class UpSampleBlock(nn.Module):
+    def __init__(
+        self,
+        ratio=2
+    ):
+        super().__init__()
+
+    def forward(self):
+        return None
+
+#simpler than attn block, attn block is just conv + attn
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.conv = HypergraphConv(in_channels, out_channels) #TODO experiment with dropout
 
-    def forward(self, x, hyperedge_index):
+    def forward(self, x, hyperedge_index, temb):
         return self.conv(x, hyperedge_index)
 
 class AttnBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, heads=8):
+    def __init__(self, in_channels, out_channels, heads=8, temb_channels=512, dropout=0.0):
         super().__init__()
         #how make bias work with true
         self.conv = HypergraphConv(in_channels, out_channels, heads=heads, bias=False , dropout=0.5) #TODO experiment with dropout
+        #is this because it's already projected? it's already gone through a fourier transform, some sin and cos nonsense
+        time_emb_proj_out_channels = out_channels
+        self.time_emb_proj = torch.nn.Linear(temb_channels, time_emb_proj_out_channels)
+        self.nonlinearity = lambda x: F.silu(x) #confused: a nonlinearity on a bunch of ints will weigh heavier on bigger ints for no reason. they're not more or less relevant than small ones
+        self.dropout = torch.nn.Dropout(dropout)
 
-    def forward(self, x, hyperedge_index):
-        return self.conv(x, hyperedge_index)
+    def forward(self, x, hyperedge_index, temb):
+        hidden_state = self.conv(x, hyperedge_index)
+        temb = self.time_emb_proj(self.nonlinearity(temb))#[:, :, None, None] (not sure what this is about, makes incompatible shape)
+        hidden_state += temb
+        hidden_state = self.nonlinearity(hidden_state)
+        hidden_state = self.dropout(hidden_state)
+        return hidden_state
 
 class UndoNoise(nn.Module):
     def __init__(self):
         super().__init__()
-        self.encode = ConvBlock(3,16)
-        self.decode = ConvBlock(16,3)
+        inner_dim = 16
+        time_embed_dim = inner_dim * 4 #should be *2 or *1?
+
+        self.encode = AttnBlock(3, inner_dim, temb_channels=time_embed_dim)
+        self.decode = AttnBlock(inner_dim, 3, temb_channels=time_embed_dim)
+
+        self.time_proj = GaussianFourierProjection(embedding_size=inner_dim, scale=16)
+        timestep_input_dim = inner_dim * 2
+
+        self.time_embedding = TimestepEmbedding(timestep_input_dim, time_embed_dim)
 
     def forward(self, x, hyperedge_index, timesteps):
-        x = self.encode(x, hyperedge_index)
-        x = self.decode(x, hyperedge_index)
+        t_emb = self.time_proj(timesteps)
+        emb = self.time_embedding(t_emb)
+
+        x = self.encode(x, hyperedge_index, emb)
+        x = self.decode(x, hyperedge_index, emb)
         return x
 
 #Mesh -> Data (mesh -> hypergraph)
@@ -117,11 +151,11 @@ for epoch in range(args["num_epochs"]):
         clean_verts = batch.pos
         noise = torch.randn(clean_verts.shape).to(clean_verts.device)
         bsz = clean_verts.shape[0]
-        #timesteps = torch.randint(
-        #    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=clean_verts.device
-        #).long()
+        timesteps = torch.randint(
+            0, noise_scheduler.config.num_train_timesteps, (bsz,), device=clean_verts.device
+        ).long()
 
-        timesteps = torch.randint(0,1,(bsz,),device=clean_verts.device) #just for testing
+        #timesteps = torch.randint(0,1,(bsz,),device=clean_verts.device) #just for testing if want to train on a single time step, like say 1 for a little bit of noise
 
         noisy_verts = noise_scheduler.add_noise(clean_verts, noise, timesteps)
 
@@ -131,25 +165,23 @@ for epoch in range(args["num_epochs"]):
         #assume epsilon prediction
         loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
 
-        print(loss)
+        print(f"loss: {loss.data}")
 
         loss.backward()
         optimizer.step()
         lr_scheduler.step()
         optimizer.zero_grad()
+        print(f"completed step {step} in epoch {epoch}")
 
     if epoch % args["save_epochs"] == 0 or epoch == args["num_epochs"] - 1:
-        torch.save(model, f"models/{time.time()}_epoch{epoch}.pt")
-                
-
-
+        #torch.save(model, f"models/{time.time()}_epoch{epoch}.pt") #doesn't work rn idk why
+        pass
 
 #gatconv has edge update, which acts like concat in regular attn
 
 #hyperedges are preprented by the edge_idx and another array of the same size saying what index each edge is
 
-
-#----
+#---junk that I don't want to delete yet:
 exit()
 from ABCDataset import ABCDataset2
 data = ABCDataset2("/Volumes/PortableSSD/data/ABC-Dataset")
