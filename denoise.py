@@ -10,6 +10,7 @@ from diffusers import DDPMPipeline, DDPMScheduler
 from diffusers.optimization import get_scheduler
 from diffusers.models.embeddings import GaussianFourierProjection, TimestepEmbedding, Timesteps
 import time
+from functions import makeHyperIncidenceMatrix
 
 #todo make down and up work lol
 class DownSampleBlock(nn.Module):
@@ -59,7 +60,7 @@ class AttnBlock(nn.Module):
         temb = self.time_emb_proj(self.nonlinearity(temb))#[:, :, None, None] (not sure what this is about, makes incompatible shape)
         hidden_state += temb
         hidden_state = self.nonlinearity(hidden_state)
-        hidden_state = self.dropout(hidden_state)
+        #hidden_state = self.dropout(hidden_state)
         return hidden_state
 
 class UndoNoise(nn.Module):
@@ -80,28 +81,11 @@ class UndoNoise(nn.Module):
         t_emb = self.time_proj(timesteps)
         emb = self.time_embedding(t_emb)
 
-        x = self.encode(x, hyperedge_index, emb)
+        x = self.encode(x, hyperedge_index, emb) #nan happens here
+        print(torch.mean(x))
+        pass
         x = self.decode(x, hyperedge_index, emb)
         return x
-
-#Mesh -> Data (mesh -> hypergraph)
-def makeHyperIncidenceMatrix(mesh):
-    faces = mesh.face.t()
-    for i,face in enumerate(faces):
-        idx = torch.tensor([i]*len(face))
-        hyperedge = torch.stack((face,idx),dim=0)
-        if not 'out' in locals():
-            out = hyperedge
-        else:
-            out = torch.cat((out,hyperedge),dim=-1)
-    return out
-
-def makeFaceTensor(incidenceMat):
-    #as is the edges never even change so this isn't necessary but if the model gets more complex to account for clipping edges then perhaps it'll modify edges and then we'll need this
-    return None
-
-def applyNoise(x,distribution):
-    return x + (torch.randn(x.shape) * (distribution ** 0.5))
 
 from ABCDataset import ABCDataset2
 train_dataloader = ABCDataset2("/Volumes/PortableSSD/data/ABC-Dataset")
@@ -160,12 +144,16 @@ for epoch in range(args["num_epochs"]):
         noisy_verts = noise_scheduler.add_noise(clean_verts, noise, timesteps)
 
         batch.edge_index = makeHyperIncidenceMatrix(batch)
-        model_output = model(noisy_verts, batch.edge_index, timesteps)
+        model_output = model(noisy_verts, batch.edge_index, timesteps) #problem: mean of output is infinity
 
+        avg1 = torch.mean(model_output)
+        avg2 = torch.mean(noise)
+        print(avg1,avg2)
+        exit()
         #assume epsilon prediction
         loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
 
-        print(f"loss: {loss.data}")
+        print(f"loss: {loss}")
 
         loss.backward()
         optimizer.step()
