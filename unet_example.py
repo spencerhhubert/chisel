@@ -25,3 +25,18 @@ y2 = net.forward(data2)
 print(data.x.shape)
 print(y.shape)
 print(y2.shape)
+
+def printAsciiBananaPhone(width):
+    for i in range(width):
+        print(" " * (width - i), end="")
+        for j in range(2 * i + 1):
+            if i == 0 or i == width - 1:
+                print("0", end="")
+            elif i == width - 2:
+                print("0", end="")
+            else:
+                if j == 0 or j == 2 * i:
+                    print("0", end="")
+                else:
+                    print(" ", end="")
+        print()
