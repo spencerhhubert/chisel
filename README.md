@@ -9,3 +9,5 @@ A mesh, often seen in the STL file format, are 3D objects defined by listed of v
 <img src="https://raw.githubusercontent.com/spencerhhubert/chisel/main/assets/undo_noise.gif" width=300 alt="Undoing the noise on a 3D mesh">
 
 *this is not a product of the model, this is an manual algorithmically generated example of how it works
+
+The initial training is being completed with the [ABC Dataset](https://deep-geometry.github.io/abc-dataset/).
