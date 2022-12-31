@@ -1,15 +1,11 @@
 # chisel
 
-Diffusion is a generative AI process by which we can take a set of data and generate more stuff that belongs in that set.
+## CAD Copilot - Generate meshes/STLs from textual prompts
 
-It works by adding noise to the data in steps and learning to undo the noise at each step.
+Chisel uses a similar architecture to Stable Diffusion where a transformer UNet neural network is used to learn to undo gaussian noise added an image, except instead of RGB values in an image, we consider the 3D coordinate values that comprise a 3D mesh.
 
-This has been almost exclusively applied to images.
+A mesh, often seen in the STL file format, are 3D objects defined by listed of vertices connected by faces, that are themselves each defined in terms of three vertices. This is equivalent to a hypergraph where each hyperedge is a face, and we use [PyTorch Geometric](https://github.com/pyg-team/pytorch_geometric) for learning on these hypergraphs.
 
-Seems like it should work for 3D data as well. Like 3D meshes where we can define a shape as being a set of triangular-faces that all connect, and a face being a three points in space that all connects.
+<img src="https://raw.githubusercontent.com/spencerhhubert/chisel/main/assets/undo_noise.gif" width=300 alt="Undoing the noise on a 3D mesh">
 
-These meshes can be described as regular old graphs. I happened upon PyTorch Geometric, which is a treasure of useful functions for dealing with graphs and neural networks.
-
-Hopefully we can generate good 3D cad assets like gears and stuff soon!
-Really need a dataset that connects words -> assets lol
-
+*this is not a product of the model, this is an manual algorithmically generated example of how it works
