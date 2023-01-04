@@ -60,7 +60,7 @@ class AttnBlock(nn.Module):
         temb = self.time_emb_proj(self.nonlinearity(temb))#[:, :, None, None] (not sure what this is about, makes incompatible shape)
         hidden_state += temb
         hidden_state = self.nonlinearity(hidden_state)
-        #hidden_state = self.dropout(hidden_state)
+        hidden_state = self.dropout(hidden_state)
         return hidden_state
 
 class UndoNoise(nn.Module):
@@ -72,8 +72,11 @@ class UndoNoise(nn.Module):
         self.encode = AttnBlock(3, inner_dim, temb_channels=time_embed_dim)
         self.decode = AttnBlock(inner_dim, 3, temb_channels=time_embed_dim)
 
-        self.time_proj = GaussianFourierProjection(embedding_size=inner_dim, scale=16)
-        timestep_input_dim = inner_dim * 2
+        #fourier projection causes nan
+        #self.time_proj = GaussianFourierProjection(embedding_size=inner_dim, scale=16)
+        #timestep_input_dim = inner_dim * 2
+        self.time_proj = Timesteps(inner_dim, flip_sin_to_cos=True, downscale_freq_shift=0)
+        timestep_input_dim = inner_dim
 
         self.time_embedding = TimestepEmbedding(timestep_input_dim, time_embed_dim)
 
@@ -81,9 +84,7 @@ class UndoNoise(nn.Module):
         t_emb = self.time_proj(timesteps)
         emb = self.time_embedding(t_emb)
 
-        x = self.encode(x, hyperedge_index, emb) #nan happens here
-        print(torch.mean(x))
-        pass
+        x = self.encode(x, hyperedge_index, emb)
         x = self.decode(x, hyperedge_index, emb)
         return x
 
@@ -146,10 +147,6 @@ for epoch in range(args["num_epochs"]):
         batch.edge_index = makeHyperIncidenceMatrix(batch)
         model_output = model(noisy_verts, batch.edge_index, timesteps) #problem: mean of output is infinity
 
-        avg1 = torch.mean(model_output)
-        avg2 = torch.mean(noise)
-        print(avg1,avg2)
-        exit()
         #assume epsilon prediction
         loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
 
