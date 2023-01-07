@@ -28,9 +28,9 @@ RUN pip install torch-geometric
 RUN pip install "git+https://github.com/facebookresearch/pytorch3d.git"
 
 RUN git clone https://github.com/spencerhhubert/chisel
-RUN cd chisel
-RUN mkdir data && mkdir data/ABC-Dataset
-RUN ./download_data.sh
+WORKDIR chisel
+
+COPY data .
 RUN python ABCDataset.py
 
 #build with "sudo docker build ."

@@ -14,7 +14,7 @@ https://archive.nyu.edu/rest/bitstreams/88651/retrieve abc_0006_stl2_v00.7z
 https://archive.nyu.edu/rest/bitstreams/88655/retrieve abc_0007_stl2_v00.7z
 EOF
 
-cat stl2_v00.txt | xargs -n 2 -P 8 sh -c 'wget --no-check-certificate $0 -O data/ABC-Dataset/$1'
+cat stl2_v00.txt | xargs -n 2 -P 8 sh -c 'wget --no-check-certificate $0 -O $1'
 rm stl2_v00.txt
 
 for file in ./*.7z; do
