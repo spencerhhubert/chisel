@@ -14,7 +14,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential ca-certificates ccache cmake curl git libjpeg-dev libgl1-mesa-glx \
         libegl1-mesa libxrandr2 libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2 \
-        libxi6 libxtst6 wget libpng-dev && \
+        libxi6 libxtst6 wget libpng-dev p7zip-rar && \
     rm -rf /var/lib/apt/lists/*
 RUN /usr/sbin/update-ccache-symlinks
 
@@ -26,6 +26,12 @@ RUN pip install torch==${TORCH_VERSION}+${CUDA_VERSION_SHORT} torchvision torcha
 RUN pip install pyg-lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_VERSION_SHORT}.html
 RUN pip install torch-geometric
 RUN pip install "git+https://github.com/facebookresearch/pytorch3d.git"
+
+RUN git clone https://github.com/spencerhhubert/chisel
+RUN cd chisel
+RUN mkdir data && mkdir data/ABC-Dataset
+RUN ./download_data.sh
+RUN python ABCDataset.py
 
 #build with "sudo docker build ."
 #run and get shell with "sudo docker run --gpus 1 -it ${the container id}"
