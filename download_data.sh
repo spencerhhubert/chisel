@@ -1,5 +1,8 @@
 #!/bin/bash
 
+dir="data/ABC-Dataset"
+cd $dir
+
 cat > stl2_v00.txt << EOF
 https://archive.nyu.edu/rest/bitstreams/88599/retrieve abc_0000_stl2_v00.7z
 https://archive.nyu.edu/rest/bitstreams/88603/retrieve abc_0001_stl2_v00.7z
