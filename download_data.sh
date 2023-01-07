@@ -1,5 +1,7 @@
 #!/bin/bash
 
+mkdir -p data && mkdir -p data/ABC-Dataset
+
 dir="data/ABC-Dataset"
 cd $dir
 
