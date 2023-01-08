@@ -1,7 +1,7 @@
 import os
 from typing import Callable, List, Optional
 import torch
-from torch_geometric.data import Data, Dataset
+from torch_geometric.data import Data, Dataset, Batch
 from torch_geometric.io import read_obj
 #from torch_geometric.nn import radius, fps, knn, ball_query
 from pytorch3d.io import load_objs_as_meshes
@@ -59,12 +59,13 @@ class ABCDataset2(Dataset):
     @property
     def processed_file_names(self) -> List[str]:
         return ['data_0.pt', 'data_1.pt', 'data_2.pt', 'data_3.pt', 'data_4.pt', 'data_5.pt', 'data_6.pt', 'data_7.pt']
+        #return ["data_0.pt", "data_1.pt"]
 
     def download(self):
         pass
 
     def process(self):
-        folders = [x for x in os.listdir(self.root) if "obj" in x] #get all the folders in the root with "obj" in their name
+        folders = list(filter(lambda x : "obj" in x and not ".7z" in x, os.listdir(self.root)))
         idx = 0
         for folder in folders:
             path = os.path.join(self.root, folder)
@@ -78,12 +79,12 @@ class ABCDataset2(Dataset):
                 path = os.path.join(self.root, folder, another_folder)
                 objs += [os.path.join(path,x) for x in os.listdir(path) if ".obj" in x and not "._" in x]
 
-            num_objs_per_datablock=2 #like 17k items in dir. so this will make ~17 processed items
+            num_objs_per_datablock=1024 #like 17k items in dir. so this will make ~17 processed items
 
             for i in range(0,len(objs),num_objs_per_datablock):
                 meshes = []
                 for obj in objs[i:i+num_objs_per_datablock]:
-                    meshes.append(read_obj(obj)) #here it blows up
+                    meshes.append(read_obj(obj))
 
                 data_list = []
                 for mesh in meshes:
@@ -102,13 +103,14 @@ class ABCDataset2(Dataset):
                     #construct edges
                     #give edge attr of distance between points
                     #what was that reconstructing faces from sample points nonsense?
-
-                torch.save(data_list, os.path.join(self.processed_dir, f"data_{idx}.pt"))
+                batch = Batch.from_data_list(data_list)
+                torch.save(batch, os.path.join(self.processed_dir, f"data_{idx}.pt"))
+                #torch.save(data_list, os.path.join(self.processed_dir, f"data_{idx}.pt"))
                 idx+=1
                 #manual hard stop
-                if idx == 8:
-                    print("processed 8 mesh batches")
-                    exit()
+                #if idx == 2:
+                #    print("processed 2 mesh batches")
+                #    break
 
     def len(self):
         return len(self.processed_file_names)
@@ -119,5 +121,6 @@ class ABCDataset2(Dataset):
 
             
 if __name__ == "__main__":
-    ABCDataset2("data/ABC-Dataset/") #do processing automatically if we call this class. takes a long time but gets saved to hdd
+    data = ABCDataset2("data/ABC-Dataset/") #do processing automatically if we call this class. takes a long time but gets saved to hdd
+    data.process()
 
