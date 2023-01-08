@@ -26,6 +26,7 @@ RUN pip install torch==${TORCH_VERSION}+${CUDA_VERSION_SHORT} torchvision torcha
 RUN pip install pyg-lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_VERSION_SHORT}.html
 RUN pip install torch-geometric
 RUN pip install "git+https://github.com/facebookresearch/pytorch3d.git"
+RUN pip install diffusers
 
 RUN git clone https://github.com/spencerhhubert/chisel
 WORKDIR chisel

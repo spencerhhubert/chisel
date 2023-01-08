@@ -1,8 +1,10 @@
+import torch
+
 #Mesh -> Data (mesh -> hypergraph)
 def makeHyperIncidenceMatrix(mesh):
     faces = mesh.face.t()
     for i,face in enumerate(faces):
-        idx = torch.tensor([i]*len(face))
+        idx = torch.tensor([i]*len(face),device=mesh.pos.device)
         hyperedge = torch.stack((face,idx),dim=0)
         if not 'out' in locals():
             out = hyperedge
@@ -15,6 +17,6 @@ def makeFaceTensor(incidenceMat):
     return None
 
 def applyNoise(x,distribution):
-    return x + (torch.randn(x.shape) * (distribution ** 0.5))
+    return x + (torch.randn(x.shape,device=x.device) * (distribution ** 0.5))
 
 

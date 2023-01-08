@@ -65,7 +65,7 @@ class ABCDataset2(Dataset):
         pass
 
     def process(self):
-        folders = list(filter(lambda x : "obj" in x and not ".7z" in x, os.listdir(self.root)))
+        folders = list(filter(lambda x : "obj" in x and not ".7z" in x, os.listdir(self.root))) #get all the folders that aren't compressed and contain objs
         idx = 0
         for folder in folders:
             path = os.path.join(self.root, folder)
@@ -79,7 +79,7 @@ class ABCDataset2(Dataset):
                 path = os.path.join(self.root, folder, another_folder)
                 objs += [os.path.join(path,x) for x in os.listdir(path) if ".obj" in x and not "._" in x]
 
-            num_objs_per_datablock=1024 #like 17k items in dir. so this will make ~17 processed items
+            num_objs_per_datablock=128 #like 17k items in dir. so this will make ~17 processed items
 
             for i in range(0,len(objs),num_objs_per_datablock):
                 meshes = []

@@ -89,7 +89,7 @@ class UndoNoise(nn.Module):
         return x
 
 from ABCDataset import ABCDataset2
-train_dataloader = ABCDataset2("/Volumes/PortableSSD/data/ABC-Dataset")
+train_dataloader = ABCDataset2("/chisel/data/ABC-Dataset")
 
 args = {
     "learning_rate": 1e-4,
@@ -105,6 +105,7 @@ args = {
     "ddpm_beta_schedule": "linear",
     "prediction_type": "epsilon",
     "save_epochs": 2,
+    "device": "cuda",
 }
 
 model = UndoNoise()
@@ -133,6 +134,7 @@ lr_scheduler = get_scheduler(
 for epoch in range(args["num_epochs"]):
     model.train()
     for step,batch in enumerate(train_dataloader):
+        batch.to(args["device"])
         clean_verts = batch.pos
         noise = torch.randn(clean_verts.shape).to(clean_verts.device)
         bsz = clean_verts.shape[0]
