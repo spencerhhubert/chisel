@@ -14,7 +14,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential ca-certificates ccache cmake curl git libjpeg-dev libgl1-mesa-glx \
         libegl1-mesa libxrandr2 libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2 \
-        libxi6 libxtst6 wget libpng-dev p7zip-rar && \
+        libxi6 libxtst6 wget libpng-dev p7zip-rar vim && \
     rm -rf /var/lib/apt/lists/*
 RUN /usr/sbin/update-ccache-symlinks
 
@@ -30,8 +30,15 @@ RUN pip install "git+https://github.com/facebookresearch/pytorch3d.git"
 RUN git clone https://github.com/spencerhhubert/chisel
 WORKDIR chisel
 
-COPY data .
-RUN python ABCDataset.py
-
 #build with "sudo docker build ."
-#run and get shell with "sudo docker run --gpus 1 -it ${the container id}"
+#run and get shell with "sudo docker run --gpus 1 -it ${container_id}"
+
+#for a6000:
+# sudo add-apt-repository ppa:graphics-drivers/ppa
+# sudo apt update
+# sudo apt install nvidia-driver-450
+# sudo apt install nvidia-container-toolkit
+# sudo reboot
+# sudo docker run --gpus all -it {container_id} 
+# sudo docker run -v /home/paperspace/chisel/data/:/chisel/data/ --gpus all -it {container_id} 
+# sudo docker run -v /home/paperspace/chisel/data/:/chisel/data/ --gpus all -it 65c23a5e6abb sh -c "cd chisel && git pull && python ABCDataset.py"
