@@ -88,9 +88,6 @@ class UndoNoise(nn.Module):
         x = self.decode(x, hyperedge_index, emb)
         return x
 
-from ABCDataset import ABCDataset2
-train_dataloader = ABCDataset2("/chisel/data/ABC-Dataset")
-
 args = {
     "learning_rate": 1e-4,
     "adam_beta1": 0.95,
@@ -106,8 +103,12 @@ args = {
     "prediction_type": "epsilon",
     "save_epochs": 2,
     "device": "cuda",
+    "batch_size": 16,
+    "data_path": "/Volumes/PortableSSD/data/ABC-Dataset",
 }
 
+from ABCDataset import ABCDataset2
+train_dataloader = ABCDataset2(args["data_path"]) #stored in blocks of 1024
 model = UndoNoise()
 
 noise_scheduler = DDPMScheduler(
@@ -131,59 +132,41 @@ lr_scheduler = get_scheduler(
     num_training_steps=(len(train_dataloader) * args["num_epochs"]) // args["gradient_accumulation_steps"],
 )
 
+model.train()
 for epoch in range(args["num_epochs"]):
-    model.train()
-    for step,batch in enumerate(train_dataloader):
-        batch.to(args["device"])
-        clean_verts = batch.pos
-        noise = torch.randn(clean_verts.shape).to(clean_verts.device)
-        bsz = clean_verts.shape[0]
-        timesteps = torch.randint(
-            0, noise_scheduler.config.num_train_timesteps, (bsz,), device=clean_verts.device
-        ).long()
+    for block in train_dataloader:
+        data = [block[i:i+args["batch_size"]] for i in range(0, len(block), args["batch_size"])]
+        for step,batch in enumerate(train_dataloader):
+            batch.to(args["device"])
+            clean_verts = batch.pos
+            noise = torch.randn(clean_verts.shape).to(clean_verts.device)
+            bsz = clean_verts.shape[0]
+            timesteps = torch.randint(
+                0, noise_scheduler.config.num_train_timesteps, (bsz,), device=clean_verts.device
+            ).long()
 
-        #timesteps = torch.randint(0,1,(bsz,),device=clean_verts.device) #just for testing if want to train on a single time step, like say 1 for a little bit of noise
+            #timesteps = torch.randint(0,1,(bsz,),device=clean_verts.device) #for testing, train on a single noise step
 
-        noisy_verts = noise_scheduler.add_noise(clean_verts, noise, timesteps)
+            noisy_verts = noise_scheduler.add_noise(clean_verts, noise, timesteps)
 
-        batch.edge_index = makeHyperIncidenceMatrix(batch)
-        model_output = model(noisy_verts, batch.edge_index, timesteps) #problem: mean of output is infinity
+            batch.edge_index = makeHyperIncidenceMatrix(batch)
+            model_output = model(noisy_verts, batch.edge_index, timesteps) #problem: mean of output is infinity
 
-        #assume epsilon prediction
-        loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
+            #assume epsilon prediction
+            loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
 
-        print(f"loss: {loss}")
+            print(f"loss: {loss}")
 
-        loss.backward()
-        optimizer.step()
-        lr_scheduler.step()
-        optimizer.zero_grad()
-        print(f"completed step {step} in epoch {epoch}")
+            loss.backward()
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
+            print(f"completed step {step} in epoch {epoch}")
 
-    if epoch % args["save_epochs"] == 0 or epoch == args["num_epochs"] - 1:
-        #torch.save(model, f"models/{time.time()}_epoch{epoch}.pt") #doesn't work rn idk why
-        pass
+        if epoch % args["save_epochs"] == 0 or epoch == args["num_epochs"] - 1:
+            #torch.save(model, f"models/{time.time()}_epoch{epoch}.pt") #doesn't work rn idk why
+            pass
 
 #gatconv has edge update, which acts like concat in regular attn
-
 #hyperedges are preprented by the edge_idx and another array of the same size saying what index each edge is
-
-#---junk that I don't want to delete yet:
-exit()
-from ABCDataset import ABCDataset2
-data = ABCDataset2("/Volumes/PortableSSD/data/ABC-Dataset")
-mesh = data[0][1]
-
-save_obj("original.obj", mesh.pos, mesh.face.t())
-
-mesh.edge_index = makeHyperIncidenceMatrix(mesh)
-mesh.pos = applyNoise(mesh.pos,1) #faces will clip quickly here. not good.
-save_obj("noisy.obj", mesh.pos, mesh.face.t())
-
-net = UndoNoise()
-y = net(mesh.pos, mesh.edge_index)
-mesh.pos = y
-
-save_obj("model_output.obj", mesh.pos, mesh.face.t())
-
 
