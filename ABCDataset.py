@@ -18,7 +18,7 @@ class ABCDataset2(Dataset):
 
     @property
     def processed_file_names(self) -> List[str]:
-        return ['data_0.pt', 'data_1.pt', 'data_2.pt', 'data_3.pt']
+        return ['data_0.pt', 'data_1.pt', 'data_2.pt']
 
     def download(self):
         pass
@@ -55,7 +55,9 @@ class ABCDataset2(Dataset):
                     data_list.append(mesh)
                     #could add code to construct proper edges where the weight value is the actual distance between the points
 
-                #batch = Batch.from_data_list(data_list) #makes mega graph where all the actual graphs are present but disconnected. might return to
+                #batch = Batch.from_data_list(data_list) #makes mega graph where all the actual graphs are present but disconnected
+                #need to return to above batch for actual batching process
+                #test how big in memory these become
                 torch.save(data_list, os.path.join(self.processed_dir, f"data_{idx}.pt"))
                 idx+=1
 

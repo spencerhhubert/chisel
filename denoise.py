@@ -10,9 +10,17 @@ from diffusers import DDPMPipeline, DDPMScheduler
 from diffusers.optimization import get_scheduler
 from diffusers.models.embeddings import GaussianFourierProjection, TimestepEmbedding, Timesteps
 import time
-from functions import makeHyperIncidenceMatrix
+from functions import makeHyperIncidenceMatrix, makeHyperEdgeFeatures
 
-#todo make down and up work lol
+class AttentionBlock(nn.Module):
+    #hypergraph attention
+    #perform attention on incidence matrix, designed to be used before conv and such
+    #https://arxiv.org/abs/1901.08150
+    def __init__(self):
+        super().__init__()
+    def forward(x, indidence_matrix):
+        pass
+
 class DownSampleBlock(nn.Module):
     def __init__(
         self,
@@ -41,22 +49,21 @@ class ConvBlock(nn.Module):
         super().__init__()
         self.conv = HypergraphConv(in_channels, out_channels) #TODO experiment with dropout
 
-    def forward(self, x, hyperedge_index, temb):
-        return self.conv(x, hyperedge_index)
+    def forward(self, x, incidence_matrix, temb):
+        return self.conv(x, incidence_matrix)
 
-class AttnBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, heads=8, temb_channels=512, dropout=0.0):
+class AttnConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, heads=8, temb_channels=512, dropout=0.8):
         super().__init__()
-        #how make bias work with true
-        self.conv = HypergraphConv(in_channels, out_channels, heads=heads, bias=False , dropout=0.5) #TODO experiment with dropout
-        #is this because it's already projected? it's already gone through a fourier transform, some sin and cos nonsense
+        self.conv = HypergraphConv(in_channels, out_channels, heads=heads, use_attention=True, bias=True, concat=True, dropout=dropout) 
         time_emb_proj_out_channels = out_channels
         self.time_emb_proj = torch.nn.Linear(temb_channels, time_emb_proj_out_channels)
-        self.nonlinearity = lambda x: F.silu(x) #confused: a nonlinearity on a bunch of ints will weigh heavier on bigger ints for no reason. they're not more or less relevant than small ones
+        self.nonlinearity = lambda x: F.silu(x) 
         self.dropout = torch.nn.Dropout(dropout)
 
-    def forward(self, x, hyperedge_index, temb):
-        hidden_state = self.conv(x, hyperedge_index)
+    def forward(self, x, incidence_matrix, temb):
+        hyperedge_features = makeHyperEdgeFeatures(batch.pos, batch.edge_index)
+        hidden_state = self.conv(x, incidence_matrix, hyperedge_attr=hyperedge_features)
         temb = self.time_emb_proj(self.nonlinearity(temb))#[:, :, None, None] (not sure what this is about, makes incompatible shape)
         hidden_state += temb
         hidden_state = self.nonlinearity(hidden_state)
@@ -68,9 +75,10 @@ class UndoNoise(nn.Module):
         super().__init__()
         inner_dim = 16
         time_embed_dim = inner_dim * 4 #should be *2 or *1?
+        heads = 8
 
-        self.encode = AttnBlock(3, inner_dim, temb_channels=time_embed_dim)
-        self.decode = AttnBlock(inner_dim, 3, temb_channels=time_embed_dim)
+        self.encode = AttnConvBlock(3, inner_dim, temb_channels=time_embed_dim, heads=heads)
+        self.decode = AttnConvBlock(inner_dim, 3, heads=1, temb_channels=time_embed_dim)
 
         #fourier projection causes nan
         #self.time_proj = GaussianFourierProjection(embedding_size=inner_dim, scale=16)
@@ -80,12 +88,12 @@ class UndoNoise(nn.Module):
 
         self.time_embedding = TimestepEmbedding(timestep_input_dim, time_embed_dim)
 
-    def forward(self, x, hyperedge_index, timesteps):
+    def forward(self, x, incidence_matrix, timesteps):
         t_emb = self.time_proj(timesteps)
         emb = self.time_embedding(t_emb)
 
-        x = self.encode(x, hyperedge_index, emb)
-        x = self.decode(x, hyperedge_index, emb)
+        x = self.encode(x, incidence_matrix, emb)
+        x = self.decode(x, incidence_matrix, emb)
         return x
 
 args = {
@@ -102,8 +110,8 @@ args = {
     "ddpm_beta_schedule": "linear",
     "prediction_type": "epsilon",
     "save_epochs": 2,
-    "device": "cuda",
-    "batch_size": 16,
+    "device": "cpu",
+    "batch_size": 1,
     "data_path": "/Volumes/PortableSSD/data/ABC-Dataset",
 }
 
@@ -137,6 +145,9 @@ for epoch in range(args["num_epochs"]):
     for block in train_dataloader:
         data = [block[i:i+args["batch_size"]] for i in range(0, len(block), args["batch_size"])]
         for step,batch in enumerate(train_dataloader):
+            batch = batch[0]#[0] is because only doing batch size of 1 for now because not properly batched in data set processing
+            batch.edge_index = makeHyperIncidenceMatrix(batch)
+            batch.edge_attr = makeHyperEdgeFeatures(batch.pos, batch.edge_index)
             batch.to(args["device"])
             clean_verts = batch.pos
             noise = torch.randn(clean_verts.shape).to(clean_verts.device)
@@ -153,11 +164,14 @@ for epoch in range(args["num_epochs"]):
             model_output = model(noisy_verts, batch.edge_index, timesteps) #problem: mean of output is infinity
 
             #assume epsilon prediction
+            print("got model output")
             loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
 
             print(f"loss: {loss}")
 
             loss.backward()
+            print("made it past backwards")
+            exit()
             optimizer.step()
             lr_scheduler.step()
             optimizer.zero_grad()
