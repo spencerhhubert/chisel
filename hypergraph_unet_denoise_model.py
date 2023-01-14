@@ -11,7 +11,7 @@ from diffusers.optimization import get_scheduler
 from diffusers.models.embeddings import GaussianFourierProjection, TimestepEmbedding, Timesteps
 import time
 from functions import makeHyperIncidenceMatrix, makeHyperEdgeFeatures
-from blocks import DownBlock, UpBlock, AttnDownBlock, AttnUpBlock
+from blocks import DownBlock, UpBlock, AttnDownBlock, AttnUpBlock, ConvBlock
 
 class HypergraphUNet(nn.Module):
     def __init__(self):
@@ -23,24 +23,26 @@ class HypergraphUNet(nn.Module):
         self.conv_in = HypergraphConv(3, projs[0])
 
         timestep_input_dim = projs[0]
-        self.time_proj = Timesteps(first_inner_dim, flip_sin_to_cos=True, downscale_freq_shift=0)
+        self.time_proj = Timesteps(projs[0], flip_sin_to_cos=True, downscale_freq_shift=0)
         self.time_embedding = TimestepEmbedding(timestep_input_dim, time_embed_dim)
+        temb_channels = time_embed_dim
 
         self.down_blocks = nn.ModuleList([
-            DownBlock(projs[0], projs[0]),
+            DownBlock(projs[0], projs[0], temb_channels=temb_channels),
             AttnDownBlock(projs[0], projs[1], heads=heads, temb_channels=temb_channels),
             AttnDownBlock(projs[1], projs[2], heads=heads, temb_channels=temb_channels),
             AttnDownBlock(projs[2], projs[3], heads=heads, temb_channels=temb_channels),
         ])
-        self.mid_block = AttnConvBlock(projs[3], projs[3], heads=heads, temb_channels=temb_channels)
+        self.mid_block = ConvBlock(projs[3], projs[3], temb_channels=temb_channels)
         self.up_blocks = nn.ModuleList([
             AttnUpBlock(projs[3], projs[2], heads=heads, temb_channels=temb_channels),
             AttnUpBlock(projs[2], projs[1], heads=heads, temb_channels=temb_channels),
             AttnUpBlock(projs[1], projs[0], heads=heads, temb_channels=temb_channels),
-            UpBlock(projs[0], projs[0]),
+            UpBlock(projs[0], projs[0], temb_channels=temb_channels),
         ])
         #TODO: implement group norm out
         self.conv_out = HypergraphConv(projs[0], 3)
+        self.act = nn.SiLU()
 
     def forward(self, x, incidence_matrix, timesteps):
         timesteps.to(x.device)
@@ -51,11 +53,11 @@ class HypergraphUNet(nn.Module):
         for down_block in self.down_blocks:
             x, res_out = down_block(x, incidence_matrix, emb)
             res_outs += res_out #could be more than one
-        x = self.mid_block(x, incidence_matrix, emb)
+        (x,_) = self.mid_block(x, incidence_matrix, emb)
         for up_block, res_out in zip(self.up_blocks, reversed(res_outs)):
-            x = up_block(x, incidence_matrix, emb, res_out)
-        x = nn.SiLU(x)
-        x = conv_out(x, incidence_matrix)
+            (x,_) = up_block(x, incidence_matrix, emb, res_out)
+        x = self.act(x)
+        x = self.conv_out(x, incidence_matrix)
         return x
 
 args = {
@@ -123,14 +125,11 @@ for epoch in range(args["num_epochs"]):
             noisy_verts = noise_scheduler.add_noise(clean_verts, noise, timesteps)
 
             batch.edge_index = makeHyperIncidenceMatrix(batch)
-            model_output = model(noisy_verts, batch.edge_index, timesteps) #problem: mean of output is infinity
+            model_output = model(noisy_verts, batch.edge_index, timesteps)
 
             #assume epsilon prediction
-            print("got model output")
             loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
-
             print(f"loss: {loss}")
-
             loss.backward()
             print("made it past backwards")
             exit()
