@@ -11,7 +11,7 @@ from diffusers.optimization import get_scheduler
 from diffusers.models.embeddings import GaussianFourierProjection, TimestepEmbedding, Timesteps
 import time
 from functions import makeHyperIncidenceMatrix, makeHyperEdgeFeatures
-from blocks import DownBlock, AttnDownBlock, AttnConvBlock, AttnUpBlock, UpBlock, DownSampleBlock, UpSampleBlock, ConvBlock
+from blocks import DownBlock, UpBlock, AttnDownBlock, AttnUpBlock
 
 class HypergraphUNet(nn.Module):
     def __init__(self):

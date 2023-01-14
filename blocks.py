@@ -64,3 +64,11 @@ class DownBlock(nn.Module):
 
     def forward(self, x, incidence_matrix, temb):
         return self.conv(x, incidence_matrix, temb)
+
+class UpBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = ConvBlock(in_channels, out_channels)
+
+    def forward(self, x, incidence_matrix, temb):
+        return self.conv(x, incidence_matrix, temb)
