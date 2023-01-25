@@ -5,21 +5,29 @@
 #should probably run in nohup because it takes a long time
 #each unachieved file is also like 50gb
 
-CONTAINER_ID = $1
+CONTAINER_ID=$1
 
 mkdir -p data && mkdir -p data/ABC-Dataset
 
 dir="data/ABC-Dataset"
 cd $dir
+pwd
+echo pwd
 
-cat > stl2_v00.txt << EOF
+cat > obj_v00.txt << EOF
 https://archive.nyu.edu/rest/bitstreams/89085/retrieve abc_0000_obj_v00.7z
 https://archive.nyu.edu/rest/bitstreams/89088/retrieve abc_0001_obj_v00.7z
 https://archive.nyu.edu/rest/bitstreams/89091/retrieve abc_0002_obj_v00.7z
 https://archive.nyu.edu/rest/bitstreams/89094/retrieve abc_0003_obj_v00.7z
+https://archive.nyu.edu/rest/bitstreams/89097/retrieve abc_0004_obj_v00.7z
+https://archive.nyu.edu/rest/bitstreams/89100/retrieve abc_0005_obj_v00.7z
+https://archive.nyu.edu/rest/bitstreams/89103/retrieve abc_0006_obj_v00.7z
+https://archive.nyu.edu/rest/bitstreams/89106/retrieve abc_0007_obj_v00.7z
 EOF
 
-cat obj_v00.txt | xargs -n 2 -P 8 sh -c 'wget --no-check-certificate $0 -O $1'
+echo ls
+
+cat obj_v00.txt | xargs -n 2 -P 8 /bin/bash -c 'wget --no-check-certificate $0 -O $1'
 rm obj_v00.txt
 
 sudo apt update && sudo apt install -y p7zip-rar
@@ -31,13 +39,9 @@ for file in ./*.7z; do
 done
 
 #process data
-sudo docker run -v /home/paperspace/chisel/data/:/chisel/data/ --gpus all $CONTAINER_ID sh -c "python ABCDataset.py" 
+sudo docker run -v /mnt/red/ABC-Dataset/:/chisel/data/ABC-Dataset --gpus all $CONTAINER_ID sh -c "python ABCDataset.py" 
 
 # more files
-# https://archive.nyu.edu/rest/bitstreams/89097/retrieve abc_0004_obj_v00.7z
-# https://archive.nyu.edu/rest/bitstreams/89100/retrieve abc_0005_obj_v00.7z
-# https://archive.nyu.edu/rest/bitstreams/89103/retrieve abc_0006_obj_v00.7z
-# https://archive.nyu.edu/rest/bitstreams/89106/retrieve abc_0007_obj_v00.7z
 # https://archive.nyu.edu/rest/bitstreams/89109/retrieve abc_0008_obj_v00.7z
 # https://archive.nyu.edu/rest/bitstreams/89112/retrieve abc_0009_obj_v00.7z
 # https://archive.nyu.edu/rest/bitstreams/89115/retrieve abc_0010_obj_v00.7z
