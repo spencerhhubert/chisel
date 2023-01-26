@@ -28,18 +28,5 @@ RUN pip install torch-geometric
 RUN pip install "git+https://github.com/facebookresearch/pytorch3d.git"
 RUN pip install diffusers
 
-RUN git clone https://github.com/spencerhhubert/chisel
+RUN mkdir chisel
 WORKDIR chisel
-
-#build with "sudo docker build ."
-#run and get shell with "sudo docker run --gpus 1 -it ${container_id}"
-
-#for a6000:
-# sudo add-apt-repository ppa:graphics-drivers/ppa
-# sudo apt update
-# sudo apt install nvidia-driver-450
-# sudo apt install nvidia-container-toolkit
-# sudo reboot
-# sudo docker run --gpus all -it {container_id} 
-# sudo docker run -v /home/paperspace/chisel/data/:/chisel/data/ --gpus all -it {container_id} 
-# sudo docker run -v /home/paperspace/chisel/data/:/chisel/data/ --gpus all -it 65c23a5e6abb sh -c "cd chisel && git pull && python ABCDataset.py"

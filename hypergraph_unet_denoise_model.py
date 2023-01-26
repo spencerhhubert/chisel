@@ -76,7 +76,7 @@ args = {
     "save_epochs": 2,
     "device": "cpu",
     "batch_size": 1,
-    "data_path": "/Volumes/PortableSSD/data/ABC-Dataset",
+    "data_path": "data/ABC-Dataset",
 }
 
 from ABCDataset import ABCDataset2
