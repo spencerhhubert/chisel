@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y python${PYTHON_VERSION} python3-pip
 RUN ln -sf /usr/bin/python3.8 /usr/local/bin/python
 RUN alias pip=pip3
 
+RUN echo "alias v=nvim" >> /root/.bashrc
+
 RUN pip install torch==${TORCH_VERSION}+${CUDA_VERSION_SHORT} torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/${CUDA_VERSION_SHORT}
 RUN pip install pyg-lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_VERSION_SHORT}.html
 RUN pip install torch-geometric
