@@ -13,12 +13,44 @@ import time
 from functions import makeHyperIncidenceMatrix, makeHyperEdgeFeatures
 from blocks import DownBlock, UpBlock, AttnDownBlock, AttnUpBlock, ConvBlock
 
+class SimpleEncodeDecode(nn.Module):
+    def __init__(self):
+        super().__init__()
+        heads = 8
+        projs = (16,)
+        time_embed_dim = 32
+
+        timestep_input_dim = projs[0]
+        self.time_proj = Timesteps(projs[0], flip_sin_to_cos=True, downscale_freq_shift=0)
+        self.time_embedding = TimestepEmbedding(timestep_input_dim, time_embed_dim)
+        temb_channels = time_embed_dim
+
+        self.down_blocks = nn.ModuleList([
+            DownBlock(3, projs[0], temb_channels=temb_channels),
+        ])
+        self.up_blocks = nn.ModuleList([
+            UpBlock(projs[0], 3, temb_channels=temb_channels),
+        ])
+        self.act = nn.SiLU()
+
+    def forward(self, x, incidence_matrix, timesteps):
+        t_emb = self.time_proj(timesteps)
+        emb = self.time_embedding(t_emb)
+        res_outs = (x,)
+        for down_block in self.down_blocks:
+            x, res_out = down_block(x, incidence_matrix, emb)
+            res_outs += res_out #could be more than one
+        for up_block, res_out in zip(self.up_blocks, reversed(res_outs)):
+            (x,_) = up_block(x, incidence_matrix, emb, res_out)
+        x = self.act(x)
+        return x
+
 class HypergraphUNet(nn.Module):
     def __init__(self):
         super().__init__()
         heads = 8
         projs = (16,32,48,64) #projections/block out channels
-        time_embed_dim = 27 #intentionally random, does this matter?
+        time_embed_dim = 32
 
         self.conv_in = HypergraphConv(3, projs[0])
 
@@ -45,7 +77,6 @@ class HypergraphUNet(nn.Module):
         self.act = nn.SiLU()
 
     def forward(self, x, incidence_matrix, timesteps):
-        timesteps.to(x.device)
         t_emb = self.time_proj(timesteps)
         emb = self.time_embedding(t_emb)
         x = self.conv_in(x, incidence_matrix)
@@ -74,14 +105,16 @@ args = {
     "ddpm_beta_schedule": "linear",
     "prediction_type": "epsilon",
     "save_epochs": 2,
-    "device": "cpu",
-    "batch_size": 1,
+    "device": "cuda",
+    "batch_size": 128,
     "data_path": "data/ABC-Dataset",
 }
 
 from ABCDataset import ABCDataset2
-train_dataloader = ABCDataset2(args["data_path"]) #stored in blocks of 1024
-model = HypergraphUNet()
+train_dataloader = ABCDataset2(args["data_path"],batched=True) #stored in blocks of 1024
+#model = HypergraphUNet()
+model = SimpleEncodeDecode()
+model.to(args["device"])
 
 noise_scheduler = DDPMScheduler(
     num_train_timesteps=args["ddpm_num_steps"],
@@ -106,41 +139,35 @@ lr_scheduler = get_scheduler(
 
 model.train()
 for epoch in range(args["num_epochs"]):
-    for data_block in train_dataloader:
-        data = [data_block[i:i+args["batch_size"]] for i in range(0, len(data_block), args["batch_size"])]
-        for step,batch in enumerate(train_dataloader):
-            batch = batch[0]#[0] is because only doing batch size of 1 for now because not properly batched in data set processing
-            batch.edge_index = makeHyperIncidenceMatrix(batch)
-            batch.edge_attr = makeHyperEdgeFeatures(batch.pos, batch.edge_index)
-            batch.to(args["device"])
-            clean_verts = batch.pos
-            noise = torch.randn(clean_verts.shape).to(clean_verts.device)
-            bsz = clean_verts.shape[0]
-            timesteps = torch.randint(
-                0, noise_scheduler.config.num_train_timesteps, (bsz,), device=clean_verts.device
-            ).long()
+    for batch in train_dataloader:
+        #data = [data_block[i:i+args["batch_size"]] for i in range(0, len(data_block), args["batch_size"])]
+        #for step,batch01 in enumerate(data):
+        #temp setup until switch to real batching:
+        batch.edge_index = makeHyperIncidenceMatrix(batch)
+        batch.edge_attr = makeHyperEdgeFeatures(batch.pos, batch.edge_index)
+        batch.to(args["device"])
+        clean_verts = batch.pos
+        noise = torch.randn(clean_verts.shape).to(clean_verts.device)
+        bsz = clean_verts.shape[0]
+        #timesteps = torch.randint(
+                #    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=clean_verts.device
+                #).long()
 
-            #timesteps = torch.randint(0,1,(bsz,),device=clean_verts.device) #for testing, train on a single noise step
+        timesteps = torch.randint(0,1,(bsz,),device=clean_verts.device) #for testing, train on a single noise step
+        noisy_verts = noise_scheduler.add_noise(clean_verts, noise, timesteps)
+        model_output = model(noisy_verts, batch.edge_index, timesteps)
+        loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
 
-            noisy_verts = noise_scheduler.add_noise(clean_verts, noise, timesteps)
+        print(f"loss: {loss}")
+        loss.backward()
+        optimizer.step()
+        lr_scheduler.step()
+        optimizer.zero_grad()
+        print(f"completed step {step} in epoch {epoch}")
 
-            batch.edge_index = makeHyperIncidenceMatrix(batch)
-            model_output = model(noisy_verts, batch.edge_index, timesteps)
-
-            #assume epsilon prediction
-            loss = F.mse_loss(model_output, noise) #need to come back and modify, use pytorch3d losses to account for like flatness of surfaces and stuff
-            print(f"loss: {loss}")
-            loss.backward()
-            print("made it past backwards")
-            exit()
-            optimizer.step()
-            lr_scheduler.step()
-            optimizer.zero_grad()
-            print(f"completed step {step} in epoch {epoch}")
-
-        if epoch % args["save_epochs"] == 0 or epoch == args["num_epochs"] - 1:
-            #torch.save(model, f"models/{time.time()}_epoch{epoch}.pt") #doesn't work rn idk why
-            pass
+    if epoch % args["save_epochs"] == 0 or epoch == args["num_epochs"] - 1:
+        #torch.save(model, f"models/{time.time()}_epoch{epoch}.pt") #doesn't work rn idk why
+        pass
 
 #gatconv has edge update, which acts like concat in regular attn
 #hyperedges are preprented by the edge_idx and another array of the same size saying what index each edge is
