@@ -14,7 +14,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential ca-certificates ccache cmake curl git libjpeg-dev libgl1-mesa-glx \
         libegl1-mesa libxrandr2 libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2 \
-        libxi6 libxtst6 wget libpng-dev p7zip-rar vim && \
+        libxi6 libxtst6 wget libpng-dev p7zip-rar neovim tmux && \
     rm -rf /var/lib/apt/lists/*
 RUN /usr/sbin/update-ccache-symlinks
 
